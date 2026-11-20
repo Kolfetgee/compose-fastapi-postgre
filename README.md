@@ -1,167 +1,85 @@
-# FastAPI + PostgreSQL Docker Compose Project
+# FastAPI + PostgreSQL | локальный Docker Compose demo
 
-Учебный проект: FastAPI-приложение и PostgreSQL запускаются через Docker Compose.
+**Статус:** публичный учебный проект · локальный запуск · не production и не внедрение ИИ.
 
-## Стек
+Небольшое Python API показывает взаимодействие FastAPI и PostgreSQL в отдельных Docker-контейнерах. Проект предназначен для демонстрации базовых навыков backend-разработки, настройки окружения и проверки доступности сервисов. Исходники короткие и позволяют быстро проследить весь путь HTTP-запроса к базе данных.
 
-- FastAPI
-- PostgreSQL 15
-- Docker
-- Docker Compose
-- psycopg
+## Что можно проверить
 
-## Структура проекта
+- `GET /` — ответ работающего FastAPI-приложения.
+- `GET /db-check` — подключение через `psycopg`, SQL `SELECT version()` и JSON-ответ.
+- `compose.yaml` — отдельные сервисы `app` и `db`, изолированная Docker-сеть и постоянный том PostgreSQL.
+- Healthcheck базы (`pg_isready`) и приложения (локальный HTTP-запрос); `depends_on: service_healthy`.
+- Конфигурация через переменные окружения; `.env` не хранится в Git и исключён из Docker build context.
+- Публикация HTTP-порта только на `127.0.0.1`, а не во внешнюю сеть хоста.
 
-```text
-.
-├── app/
-│   └── main.py
-├── compose.yaml
-├── Dockerfile
-├── requirements.txt
-├── .env.example
-├── .gitignore
-└── README.md
-```
-
-## Переменные окружения
-
-Перед запуском нужно создать файл `.env` на основе `.env.example`:
-
-```bash
-cp .env.example .env
-```
-
-Пример содержимого `.env.example`:
-
-```env
-POSTGRES_USER=admin
-POSTGRES_PASSWORD=secret
-POSTGRES_DB=appdb
-DATABASE_URL=postgresql://admin:secret@db:5432/appdb
-```
-
-> В реальных проектах `.env` не должен попадать в GitHub, потому что там могут быть пароли и другие секреты.
-
-## Запуск проекта
-
-Проверить конфигурацию Docker Compose:
-
-```bash
-docker compose config
-```
-
-Запустить проект в фоне с пересборкой образа приложения:
-
-```bash
-docker compose up -d --build
-```
-
-## Проверка статуса контейнеров
-
-```bash
-docker compose ps
-```
-
-Ожидается, что сервисы `app` и `db` будут в состоянии `Up (healthy)`.
-
-## Проверка FastAPI
-
-```bash
-curl localhost:8000
-```
-
-Ожидаемый ответ:
-
-```json
-{"message":"FastAPI app is running"}
-```
-
-## Проверка подключения к PostgreSQL через FastAPI
-
-```bash
-curl localhost:8000/db-check
-```
-
-Ожидаемый ответ содержит статус `ok` и версию PostgreSQL:
-
-```json
-{
-  "status": "ok",
-  "postgres_version": "PostgreSQL ..."
-}
-```
-
-Цепочка проверки:
+## Архитектура
 
 ```text
-Mac
-→ localhost:8000
-→ ports "8000:8000"
-→ app container
-→ FastAPI /db-check
-→ DATABASE_URL
-→ db:5432
-→ PostgreSQL
-→ SELECT version()
-→ JSON response
+Браузер / curl
+      |
+      v
+127.0.0.1:8000
+      |
+      v
+FastAPI (app container) --- Docker network ---> PostgreSQL 15 (db container)
+      |                                                |
+      +-- GET /                                        +-- persistent pgdata volume
+      +-- GET /db-check -- psycopg --> SELECT version()
 ```
 
-## Healthcheck
+## Локальный запуск
 
-В проекте настроены healthcheck-и для двух сервисов.
+Требования: установленный Docker с поддержкой Compose. Для запуска не нужны реальные рабочие данные и внешние API-ключи.
 
-### db healthcheck
+1. Создайте локальный файл настроек:
 
-Проверяет готовность PostgreSQL внутри `db` container через `pg_isready`.
+   ```bash
+   cp .env.example .env
+   ```
 
-Смысл:
+   В Windows PowerShell используйте `Copy-Item .env.example .env`. Замените демонстрационный пароль **в обоих полях** — `POSTGRES_PASSWORD` и `DATABASE_URL`, чтобы они совпадали. Никогда не используйте эти примеры как реальные производственные credentials.
 
-```text
-db healthy = PostgreSQL готов принимать подключения
-```
+2. Проверьте конфигурацию и запустите:
 
-### app healthcheck
+   ```bash
+   docker compose config
+   docker compose up -d --build
+   docker compose ps
+   ```
 
-Проверяет, что FastAPI отвечает на HTTP-запрос внутри `app` container.
+3. Проверьте ответы:
 
-Смысл:
+   ```bash
+   curl http://127.0.0.1:8000/
+   curl http://127.0.0.1:8000/db-check
+   ```
 
-```text
-app healthy = FastAPI запущен и отвечает
-```
+   Первый запрос возвращает `{"message":"FastAPI app is running"}`.
+   Второй при успешном подключении возвращает `status: "ok"` и строку версии PostgreSQL. Доступна документация FastAPI: [Swagger UI](http://127.0.0.1:8000/docs).
 
-### depends_on condition: service_healthy
+4. Остановите демонстрацию:
 
-`app` запускается только после того, как `db` станет `healthy`.
+   ```bash
+   docker compose down
+   ```
 
-```text
-depends_on = порядок запуска
-healthcheck = проверка готовности service
-condition: service_healthy = ждать successful healthcheck
-```
+   Команда `docker compose down -v` **удалит том с данными БД**. Не используйте её, если хотите сохранить данные.
 
-## Остановка проекта
+## Карта исходников
 
-Остановить проект, удалить containers и network, но сохранить volume с данными PostgreSQL:
+| Файл | Что демонстрирует |
+| --- | --- |
+| [app/main.py](app/main.py) | HTTP-маршруты FastAPI и SQL-запрос через psycopg |
+| [compose.yaml](compose.yaml) | Приложение, PostgreSQL, сеть, том и проверки готовности |
+| [Dockerfile](Dockerfile) | Сборка Python-приложения |
+| [.env.example](.env.example) | Шаблон переменных окружения без реальных секретов |
+| [.dockerignore](.dockerignore) | Исключение локальной конфигурации из образа |
 
-```bash
-docker compose down
-```
+## Что проект **не** демонстрирует
 
-Остановить проект и удалить containers, network и volume с данными PostgreSQL:
+Здесь нет AI-агентов, CRM-интеграции, полноценного CRUD, OAuth, миграций, авторизации, CI и автоматизированных тестов. Проект не является промышленным сервисом: нет TLS, управления production-секретами, разграничения прав, мониторинга и проверки на нагрузку.
 
-```bash
-docker compose down -v
-```
+Функциональность отражена в исходном коде и инструкции; независимый повторный запуск на чистом окружении **не подтверждён в рамках подготовки этой страницы**. Версии пакетов в `requirements.txt` не зафиксированы, поэтому воспроизводимость сборки во времени ограничена.
 
-## Основная архитектурная формула
-
-```text
-Mac → app = через ports
-app → db = через Docker network
-```
-
-- `ports "8000:8000"` нужен, чтобы Mac мог обратиться к FastAPI в `app` container.
-- `backend network` нужен, чтобы `app` container мог обратиться к `db` container по hostname `db`.
-- `pgdata` — Docker volume для хранения данных PostgreSQL.
+**Зачем в портфолио для автоматизации:** это компактная проверяемая база для понимания API, интеграций и обмена данными с PostgreSQL. Агентные и исследовательские системы представлены отдельно; не следует считать их реализованными внутри этого проекта.

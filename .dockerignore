@@ -1,0 +1,17 @@
+# Never bake local settings, Git history or generated data into the image.
+.git
+.gitignore
+.env
+.env.*
+!.env.example
+.venv
+__pycache__
+*.pyc
+.pytest_cache
+.DS_Store
+*.sqlite
+*.sqlite3
+*.db
+data/
+backups/
+*.log
